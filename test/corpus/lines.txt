@@ -50,41 +50,44 @@ Header:
 -----
 
 (document
-  (line
-    (chapter
-      (chapter_marker)
-      (inline
-        (text))))
-  (line
-    (task
-      (todo_marker)
-      (inline
-        (text))))
-  (line
-    (note
-      (info_marker)
-      (inline
-        (text))))
-  (layout_group
+  (chapter_section
     (line
-      (header
+      (chapter
+        (chapter_marker)
         (inline
           (text))))
-    (layout_block
+    (section_body
       (line
-        (header
+        (task
+          (todo_marker)
           (inline
             (text))))
       (line
-        (header
+        (note
+          (info_marker)
+          (inline
+            (text))))
+      (layout_group
+        (line
+          (header
+            (inline
+              (text))))
+        (layout_block
+          (line
+            (header
+              (inline
+                (text))))
+          (line
+            (header
+              (inline
+                (text)))))
+        (layout_end))
+      (line
+        (chapter
+          (chapter_marker)
           (inline
             (text)))))
-    (layout_end))
-  (line
-    (chapter
-      (chapter_marker)
-      (inline
-        (text)))))
+    (section_end)))
 
 ==================
 Plain lookalikes

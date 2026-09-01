@@ -7,7 +7,8 @@ Parses tasklist files with Tree-sitter.
 - **Grammars**: provides Tree-sitter grammars.
 - **Task states**: recognizes high, todo, done, failed, and informational markers.
 - **Text formatting**: parses strike, bold, italic, math, and raw spans.
-- **Layout**: exposes visually indented groups without assigning task hierarchy.
+- **Chapters**: nests chapter sections by marker depth.
+- **Layout**: exposes nested headers and tasks through indentation.
 - **Bindings**: supports Node-API, source, and WebAssembly builds.
 
 ## Installation

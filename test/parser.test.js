@@ -98,6 +98,26 @@ test("builds visual layout groups and excludes trailing blank lines", () => {
   );
 });
 
+test("nests chapter levels, headers, and tasks by their structural ranges", () => {
+  const tree = parse(
+    "# Parent\nHeader:\n  Child:\n    ☐ task\n      ☐ subtask\n## Child chapter\n☐ parent task\n  ☐ nested task\n# Next\n",
+  );
+  assert.strictEqual(tree.rootNode.hasError, false);
+  const sections = tree.rootNode.descendantsOfType("chapter_section");
+  assert.deepStrictEqual(
+    sections.map((node) => [node.startPosition.row, node.endPosition.row]),
+    [
+      [0, 7],
+      [5, 7],
+    ],
+  );
+  const groups = tree.rootNode.descendantsOfType("layout_group");
+  assert.deepStrictEqual(
+    groups.map((node) => node.childForFieldName("owner").namedChild(0).type),
+    ["header", "header", "task", "task"],
+  );
+});
+
 test("parses CRLF and a final line without a newline", () => {
   const tree = parse("Header:\r\n\t☐ child\r\nFinal");
   assert.strictEqual(tree.rootNode.hasError, false);
@@ -125,4 +145,27 @@ test("restores layout scanner state during an incremental reparse", () => {
   assert.strictEqual(reparsed.rootNode.hasError, false);
   assert.strictEqual(reparsed.rootNode.toString(), fresh.rootNode.toString());
   assert.strictEqual(reparsed.rootNode.descendantsOfType("layout_group").length, 1);
+});
+
+test("restores chapter scanner state during an incremental reparse", () => {
+  const instance = parser();
+  const source = "# Parent\n## Child\ntext\n# Next\n";
+  const changed = "# Parent\n# Child\ntext\n# Next\n";
+  const tree = instance.parse(source);
+  assert.strictEqual(tree.rootNode.descendantsOfType("chapter_section").length, 2);
+  const index = Buffer.byteLength("# Parent\n");
+  tree.edit({
+    startIndex: index,
+    oldEndIndex: index + 1,
+    newEndIndex: index,
+    startPosition: { row: 1, column: 0 },
+    oldEndPosition: { row: 1, column: 1 },
+    newEndPosition: { row: 1, column: 0 },
+  });
+
+  const reparsed = instance.parse(changed, tree);
+  const fresh = instance.parse(changed);
+  assert.strictEqual(reparsed.rootNode.hasError, false);
+  assert.strictEqual(reparsed.rootNode.toString(), fresh.rootNode.toString());
+  assert.strictEqual(reparsed.rootNode.descendantsOfType("chapter_section").length, 1);
 });

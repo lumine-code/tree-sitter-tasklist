@@ -9,6 +9,9 @@ module.exports = grammar({
     $._header_start,
     $._chapter_separator,
     $.layout_end,
+    $.section_end,
+    $._section_open,
+    $._section_close,
     $._indent,
     $._same,
     $._dedent,
@@ -30,7 +33,18 @@ module.exports = grammar({
         optional($._trailing_space),
       ),
 
-    _item: ($) => choice($.layout_group, $.line),
+    _item: ($) => choice($.chapter_section, $.layout_group, $.line),
+
+    chapter_section: ($) =>
+      seq(
+        field("heading", $.line),
+        $._section_open,
+        field("body", $.section_body),
+        field("end", $.section_end),
+        $._section_close,
+      ),
+
+    section_body: ($) => seq($._item, repeat(seq($._same, $._item))),
 
     layout_group: ($) =>
       seq(

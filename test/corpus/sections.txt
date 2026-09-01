@@ -1,0 +1,76 @@
+==================
+Chapter levels contain layout hierarchy
+==================
+# Parent
+Header:
+  Child:
+    ☐ task
+      ☐ subtask
+## Child chapter
+☐ parent task
+  ☐ nested task
+# Next
+-----
+
+(document
+  (chapter_section
+    (line
+      (chapter
+        (chapter_marker)
+        (inline
+          (text))))
+    (section_body
+      (layout_group
+        (line
+          (header
+            (inline
+              (text))))
+        (layout_block
+          (layout_group
+            (line
+              (header
+                (inline
+                  (text))))
+            (layout_block
+              (layout_group
+                (line
+                  (task
+                    (todo_marker)
+                    (inline
+                      (text))))
+                (layout_block
+                  (line
+                    (task
+                      (todo_marker)
+                      (inline
+                        (text)))))
+                (layout_end)))
+            (layout_end)))
+        (layout_end))
+      (chapter_section
+        (line
+          (chapter
+            (chapter_marker)
+            (inline
+              (text))))
+        (section_body
+          (layout_group
+            (line
+              (task
+                (todo_marker)
+                (inline
+                  (text))))
+            (layout_block
+              (line
+                (task
+                  (todo_marker)
+                  (inline
+                    (text)))))
+            (layout_end)))
+        (section_end)))
+    (section_end))
+  (line
+    (chapter
+      (chapter_marker)
+      (inline
+        (text)))))

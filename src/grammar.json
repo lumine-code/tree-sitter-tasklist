@@ -72,11 +72,77 @@
       "members": [
         {
           "type": "SYMBOL",
+          "name": "chapter_section"
+        },
+        {
+          "type": "SYMBOL",
           "name": "layout_group"
         },
         {
           "type": "SYMBOL",
           "name": "line"
+        }
+      ]
+    },
+    "chapter_section": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "FIELD",
+          "name": "heading",
+          "content": {
+            "type": "SYMBOL",
+            "name": "line"
+          }
+        },
+        {
+          "type": "SYMBOL",
+          "name": "_section_open"
+        },
+        {
+          "type": "FIELD",
+          "name": "body",
+          "content": {
+            "type": "SYMBOL",
+            "name": "section_body"
+          }
+        },
+        {
+          "type": "FIELD",
+          "name": "end",
+          "content": {
+            "type": "SYMBOL",
+            "name": "section_end"
+          }
+        },
+        {
+          "type": "SYMBOL",
+          "name": "_section_close"
+        }
+      ]
+    },
+    "section_body": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "SYMBOL",
+          "name": "_item"
+        },
+        {
+          "type": "REPEAT",
+          "content": {
+            "type": "SEQ",
+            "members": [
+              {
+                "type": "SYMBOL",
+                "name": "_same"
+              },
+              {
+                "type": "SYMBOL",
+                "name": "_item"
+              }
+            ]
+          }
         }
       ]
     },
@@ -572,6 +638,18 @@
     {
       "type": "SYMBOL",
       "name": "layout_end"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "section_end"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "_section_open"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "_section_close"
     },
     {
       "type": "SYMBOL",

@@ -14,6 +14,9 @@ enum TokenType {
   HEADER_START,
   CHAPTER_SEPARATOR,
   LAYOUT_END,
+  SECTION_END,
+  SECTION_OPEN,
+  SECTION_CLOSE,
   INDENT,
   SAME,
   DEDENT,
@@ -29,8 +32,11 @@ enum TokenType {
 
 typedef struct {
   Array(uint16_t) owners;
+  Array(uint16_t) sections;
   uint16_t current_indent;
   uint16_t next_indent;
+  uint16_t current_chapter_level;
+  uint16_t next_chapter_level;
   bool next_exists;
   bool chapter_valid;
   bool header_valid;
@@ -100,13 +106,14 @@ static Prefix consume_prefix(TSLexer *lexer) {
 typedef struct {
   bool chapter;
   bool header;
+  uint16_t chapter_level;
 } LineKind;
 
 // Reads the current line from its content start. The caller has already marked
 // the token end at that start, so this lookahead never changes the returned
 // range of LINE_START/SAME/INDENT.
 static LineKind analyze_line(TSLexer *lexer, uint16_t indent, bool special_header_prefix) {
-  LineKind kind = {false, special_header_prefix};
+  LineKind kind = {false, special_header_prefix, 0};
   if (special_header_prefix) {
     while (lexer->lookahead && !is_line_ending(lexer->lookahead)) {
       lexer->advance(lexer, true);
@@ -163,6 +170,9 @@ static LineKind analyze_line(TSLexer *lexer, uint16_t indent, bool special_heade
   kind.chapter =
     indent == 0 && hash_count > 0 && chapter_spaces > 0 &&
     (chapter_title_characters > 0 || chapter_spaces > 1);
+  kind.chapter_level = kind.chapter
+    ? (hash_count > UINT16_MAX ? UINT16_MAX : (uint16_t)hash_count)
+    : 0;
   kind.header =
     !task_marker && !kind.chapter && last_non_space == ':' && last_non_space_index > 0;
   return kind;
@@ -171,6 +181,7 @@ static LineKind analyze_line(TSLexer *lexer, uint16_t indent, bool special_heade
 static void analyze_next_line(Scanner *scanner, TSLexer *lexer) {
   scanner->next_exists = false;
   scanner->next_indent = 0;
+  scanner->next_chapter_level = 0;
 
   if (is_line_ending(lexer->lookahead)) {
     advance_line_ending(lexer);
@@ -182,8 +193,10 @@ static void analyze_next_line(Scanner *scanner, TSLexer *lexer) {
 
   while (true) {
     uint16_t indent = 0;
+    size_t prefix_count = 0;
     while (is_indent_character(lexer->lookahead)) {
       indent = advance_indent(indent, lexer->lookahead);
+      prefix_count++;
       lexer->advance(lexer, true);
     }
     if (is_line_ending(lexer->lookahead)) {
@@ -193,6 +206,12 @@ static void analyze_next_line(Scanner *scanner, TSLexer *lexer) {
     if (!lexer->lookahead) return;
     scanner->next_exists = true;
     scanner->next_indent = indent;
+    LineKind kind = analyze_line(
+      lexer,
+      indent,
+      prefix_count > 0 && lexer->lookahead == ':'
+    );
+    scanner->next_chapter_level = kind.chapter_level;
     return;
   }
 }
@@ -208,6 +227,7 @@ static void analyze_current_and_next(
     prefix.special_header_prefix
   );
   scanner->current_indent = prefix.indent;
+  scanner->current_chapter_level = kind.chapter_level;
   scanner->chapter_valid = kind.chapter;
   scanner->header_valid = kind.header;
   scanner->in_header = false;
@@ -256,6 +276,19 @@ static bool transition_closes_group(const Scanner *scanner) {
   return !scanner->next_exists || scanner->next_indent <= owner;
 }
 
+static bool transition_opens_section(const Scanner *scanner) {
+  return scanner->current_chapter_level > 0 && scanner->next_exists &&
+         (scanner->next_chapter_level == 0 ||
+          scanner->next_chapter_level > scanner->current_chapter_level);
+}
+
+static bool transition_closes_section(const Scanner *scanner) {
+  if (scanner->sections.size == 0) return false;
+  uint16_t level = *array_back(&scanner->sections);
+  return !scanner->next_exists ||
+         (scanner->next_chapter_level > 0 && scanner->next_chapter_level <= level);
+}
+
 // Consumes the already-analyzed transition to the next nonblank line. Blank
 // lines and the next line's indentation stay in the anonymous transition token.
 static bool consume_transition(Scanner *scanner, TSLexer *lexer, enum TokenType symbol) {
@@ -301,6 +334,13 @@ static bool scan_transition(
     array_pop(&scanner->owners);
     return scan_zero_width(lexer, DEDENT);
   }
+  if (valid_symbols[SECTION_END] && transition_closes_section(scanner)) {
+    return scan_zero_width(lexer, SECTION_END);
+  }
+  if (valid_symbols[SECTION_CLOSE] && transition_closes_section(scanner)) {
+    array_pop(&scanner->sections);
+    return scan_zero_width(lexer, SECTION_CLOSE);
+  }
 
   if (!scanner->next_exists) {
     if (scanner->owners.size == 0 && valid_symbols[END]) {
@@ -309,6 +349,12 @@ static bool scan_transition(
     return false;
   }
 
+  if (
+    valid_symbols[SECTION_OPEN] && transition_opens_section(scanner)
+  ) {
+    array_push(&scanner->sections, scanner->current_chapter_level);
+    return consume_transition(scanner, lexer, SECTION_OPEN);
+  }
   if (
     valid_symbols[INDENT] && scanner->next_indent > scanner->current_indent
   ) {
@@ -494,6 +540,7 @@ void *tree_sitter_tasklist_external_scanner_create(void) {
   Scanner *scanner = calloc(1, sizeof(Scanner));
   if (!scanner) return NULL;
   array_init(&scanner->owners);
+  array_init(&scanner->sections);
   return scanner;
 }
 
@@ -519,8 +566,10 @@ bool tree_sitter_tasklist_external_scanner_scan(
   }
 
   if (
-    valid_symbols[LAYOUT_END] || valid_symbols[INDENT] || valid_symbols[SAME] ||
-    valid_symbols[DEDENT] || valid_symbols[END]
+    valid_symbols[LAYOUT_END] || valid_symbols[SECTION_END] ||
+    valid_symbols[SECTION_OPEN] || valid_symbols[SECTION_CLOSE] ||
+    valid_symbols[INDENT] || valid_symbols[SAME] || valid_symbols[DEDENT] ||
+    valid_symbols[END]
   ) {
     bool transitioned = scan_transition(scanner, lexer, valid_symbols);
     if (transitioned) return true;
@@ -546,6 +595,19 @@ bool tree_sitter_tasklist_external_scanner_scan(
   return false;
 }
 
+static void write_u16(char *buffer, size_t *size, uint16_t value) {
+  buffer[(*size)++] = (char)(value & 0xff);
+  buffer[(*size)++] = (char)(value >> 8);
+}
+
+static uint16_t read_u16(const char *buffer, size_t *offset) {
+  uint16_t value =
+    (uint16_t)(uint8_t)buffer[*offset] |
+    (uint16_t)((uint8_t)buffer[*offset + 1] << 8);
+  *offset += 2;
+  return value;
+}
+
 unsigned tree_sitter_tasklist_external_scanner_serialize(
   void *payload,
   char *buffer
@@ -561,19 +623,27 @@ unsigned tree_sitter_tasklist_external_scanner_serialize(
     (scanner->header_space_title ? 32u : 0u) |
     (scanner->at_content_start ? 64u : 0u);
   buffer[size++] = (char)flags;
-  buffer[size++] = (char)(scanner->current_indent & 0xff);
-  buffer[size++] = (char)(scanner->current_indent >> 8);
-  buffer[size++] = (char)(scanner->next_indent & 0xff);
-  buffer[size++] = (char)(scanner->next_indent >> 8);
+  write_u16(buffer, &size, scanner->current_indent);
+  write_u16(buffer, &size, scanner->next_indent);
+  write_u16(buffer, &size, scanner->current_chapter_level);
+  write_u16(buffer, &size, scanner->next_chapter_level);
 
-  for (
-    size_t index = 0;
-    index < scanner->owners.size && size + 2 <= TREE_SITTER_SERIALIZATION_BUFFER_SIZE;
-    index++
-  ) {
-    uint16_t value = *array_get(&scanner->owners, index);
-    buffer[size++] = (char)(value & 0xff);
-    buffer[size++] = (char)(value >> 8);
+  size_t available_pairs = (TREE_SITTER_SERIALIZATION_BUFFER_SIZE - 13) / 2;
+  uint16_t owner_count = scanner->owners.size < available_pairs
+    ? (uint16_t)scanner->owners.size
+    : (uint16_t)available_pairs;
+  available_pairs -= owner_count;
+  uint16_t section_count = scanner->sections.size < available_pairs
+    ? (uint16_t)scanner->sections.size
+    : (uint16_t)available_pairs;
+  write_u16(buffer, &size, owner_count);
+  write_u16(buffer, &size, section_count);
+
+  for (uint16_t index = 0; index < owner_count; index++) {
+    write_u16(buffer, &size, *array_get(&scanner->owners, index));
+  }
+  for (uint16_t index = 0; index < section_count; index++) {
+    write_u16(buffer, &size, *array_get(&scanner->sections, index));
   }
   return (unsigned)size;
 }
@@ -585,8 +655,11 @@ void tree_sitter_tasklist_external_scanner_deserialize(
 ) {
   Scanner *scanner = payload;
   array_clear(&scanner->owners);
+  array_clear(&scanner->sections);
   scanner->current_indent = 0;
   scanner->next_indent = 0;
+  scanner->current_chapter_level = 0;
+  scanner->next_chapter_level = 0;
   scanner->next_exists = false;
   scanner->chapter_valid = false;
   scanner->header_valid = false;
@@ -594,7 +667,7 @@ void tree_sitter_tasklist_external_scanner_deserialize(
   scanner->header_space_title = false;
   scanner->chapter_space_title = false;
   scanner->at_content_start = false;
-  if (length < 5) return;
+  if (length < 13) return;
 
   uint8_t flags = (uint8_t)buffer[0];
   scanner->next_exists = (flags & 1u) != 0;
@@ -604,20 +677,25 @@ void tree_sitter_tasklist_external_scanner_deserialize(
   scanner->chapter_space_title = (flags & 16u) != 0;
   scanner->header_space_title = (flags & 32u) != 0;
   scanner->at_content_start = (flags & 64u) != 0;
-  scanner->current_indent =
-    (uint16_t)(uint8_t)buffer[1] | (uint16_t)((uint8_t)buffer[2] << 8);
-  scanner->next_indent =
-    (uint16_t)(uint8_t)buffer[3] | (uint16_t)((uint8_t)buffer[4] << 8);
-  for (size_t index = 5; index + 1 < length; index += 2) {
-    uint16_t value =
-      (uint16_t)(uint8_t)buffer[index] |
-      (uint16_t)((uint8_t)buffer[index + 1] << 8);
-    array_push(&scanner->owners, value);
+  size_t offset = 1;
+  scanner->current_indent = read_u16(buffer, &offset);
+  scanner->next_indent = read_u16(buffer, &offset);
+  scanner->current_chapter_level = read_u16(buffer, &offset);
+  scanner->next_chapter_level = read_u16(buffer, &offset);
+  uint16_t owner_count = read_u16(buffer, &offset);
+  uint16_t section_count = read_u16(buffer, &offset);
+  if (offset + (size_t)(owner_count + section_count) * 2 > length) return;
+  for (uint16_t index = 0; index < owner_count; index++) {
+    array_push(&scanner->owners, read_u16(buffer, &offset));
+  }
+  for (uint16_t index = 0; index < section_count; index++) {
+    array_push(&scanner->sections, read_u16(buffer, &offset));
   }
 }
 
 void tree_sitter_tasklist_external_scanner_destroy(void *payload) {
   Scanner *scanner = payload;
   array_delete(&scanner->owners);
+  array_delete(&scanner->sections);
   free(scanner);
 }
