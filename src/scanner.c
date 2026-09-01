@@ -431,6 +431,7 @@ static bool scan_text(Scanner *scanner, TSLexer *lexer) {
   }
 
   bool consumed = false;
+  bool marked = false;
   int32_t previous = 0;
   while (lexer->lookahead && !is_line_ending(lexer->lookahead)) {
     int32_t character = lexer->lookahead;
@@ -453,6 +454,7 @@ static bool scan_text(Scanner *scanner, TSLexer *lexer) {
     ) {
       if (consumed) {
         lexer->mark_end(lexer); // Include internal spaces before the delimiter.
+        marked = true;
         lexer->result_symbol = TEXT;
         return true;
       }
@@ -464,10 +466,13 @@ static bool scan_text(Scanner *scanner, TSLexer *lexer) {
     lexer->advance(lexer, false);
     consumed = true;
     previous = character;
-    if (!is_ascii_space(character)) lexer->mark_end(lexer);
+    if (!is_ascii_space(character)) {
+      lexer->mark_end(lexer);
+      marked = true;
+    }
   }
 
-  if (!consumed) return false;
+  if (!consumed || !marked) return false;
   lexer->result_symbol = TEXT;
   return true;
 }

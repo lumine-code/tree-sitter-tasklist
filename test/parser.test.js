@@ -34,6 +34,23 @@ test("preserves TextMate line precedence and edge cases", () => {
   );
 });
 
+test("keeps indentation, separators, and trailing spaces outside task content", () => {
+  const tree = parse("  ☐ todo  \n☐\tTODO\t  \n");
+  assert.strictEqual(tree.rootNode.hasError, false);
+  const tasks = tree.rootNode.descendantsOfType("task");
+  assert.deepStrictEqual(
+    tasks.map((node) => [node.startIndex, node.endIndex]),
+    [
+      [2, 8],
+      [11, 18],
+    ],
+  );
+  assert.deepStrictEqual(
+    tree.rootNode.descendantsOfType("inline").map((node) => node.text),
+    ["todo", "\tTODO\t"],
+  );
+});
+
 test("matches opaque formats and Unicode word boundaries", () => {
   const source = [
     "~~ ** __ $$ ``",
