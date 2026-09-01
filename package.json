@@ -1,0 +1,65 @@
+{
+  "name": "@lumine-code/tree-sitter-tasklist",
+  "author": "lumine-code",
+  "version": "1.0.0",
+  "description": "Parses tasklist files with Tree-sitter.",
+  "main": "bindings/node",
+  "types": "bindings/node",
+  "repository": "https://github.com/lumine-code/tree-sitter-tasklist",
+  "bugs": "https://github.com/lumine-code/tree-sitter-tasklist/issues",
+  "homepage": "https://github.com/lumine-code/tree-sitter-tasklist",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "packageManager": "npm@11.16.0",
+  "keywords": [
+    "tree-sitter",
+    "tasklist",
+    "todo",
+    "checklist",
+    "gtd"
+  ],
+  "files": [
+    "bindings/node",
+    "grammar.js",
+    "src",
+    "tree-sitter.json",
+    "binding.gyp"
+  ],
+  "dependencies": {
+    "node-addon-api": "^8.9.2",
+    "node-gyp-build": "^4.8.4"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.9.1",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.11.0",
+    "prettier": "^3.9.6",
+    "tree-sitter": "^0.25.0",
+    "tree-sitter-cli": "0.26.13"
+  },
+  "peerDependencies": {
+    "tree-sitter": "^0.25.0"
+  },
+  "peerDependenciesMeta": {
+    "tree-sitter": {
+      "optional": true
+    }
+  },
+  "scripts": {
+    "build": "npm run generate && npm run build:native",
+    "build:native": "node-gyp rebuild",
+    "build:wasm": "tree-sitter build --wasm",
+    "check:format": "prettier --check .",
+    "check:generated": "node scripts/check-generated.js",
+    "generate": "node scripts/generate-unicode.js src/unicode.h && tree-sitter generate",
+    "install": "node-gyp-build",
+    "lint": "eslint .",
+    "test": "npm run lint && npm run check:format && npm run check:generated && npm run build:native && node --test bindings/node/binding_test.js test/*.test.js && tree-sitter test"
+  }
+}

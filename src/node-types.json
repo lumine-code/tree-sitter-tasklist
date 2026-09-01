@@ -1,0 +1,339 @@
+[
+  {
+    "type": "chapter",
+    "named": true,
+    "fields": {
+      "marker": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "chapter_marker",
+            "named": true
+          }
+        ]
+      },
+      "title": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "inline",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "document",
+    "named": true,
+    "root": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "layout_group",
+          "named": true
+        },
+        {
+          "type": "line",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "header",
+    "named": true,
+    "fields": {
+      "colon": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": ":",
+            "named": false
+          }
+        ]
+      },
+      "title": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "inline",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "inline",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "bold",
+          "named": true
+        },
+        {
+          "type": "italic",
+          "named": true
+        },
+        {
+          "type": "math",
+          "named": true
+        },
+        {
+          "type": "raw",
+          "named": true
+        },
+        {
+          "type": "strikethrough",
+          "named": true
+        },
+        {
+          "type": "text",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "layout_block",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "layout_group",
+          "named": true
+        },
+        {
+          "type": "line",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "layout_group",
+    "named": true,
+    "fields": {
+      "body": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "layout_block",
+            "named": true
+          }
+        ]
+      },
+      "end": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "layout_end",
+            "named": true
+          }
+        ]
+      },
+      "owner": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "line",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "line",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": false,
+      "required": true,
+      "types": [
+        {
+          "type": "chapter",
+          "named": true
+        },
+        {
+          "type": "header",
+          "named": true
+        },
+        {
+          "type": "note",
+          "named": true
+        },
+        {
+          "type": "task",
+          "named": true
+        },
+        {
+          "type": "text_line",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "note",
+    "named": true,
+    "fields": {
+      "content": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "inline",
+            "named": true
+          }
+        ]
+      },
+      "marker": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "info_marker",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "task",
+    "named": true,
+    "fields": {
+      "content": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "inline",
+            "named": true
+          },
+          {
+            "type": "opaque_text",
+            "named": true
+          }
+        ]
+      },
+      "marker": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "done_marker",
+            "named": true
+          },
+          {
+            "type": "fail_marker",
+            "named": true
+          },
+          {
+            "type": "high_marker",
+            "named": true
+          },
+          {
+            "type": "todo_marker",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "text_line",
+    "named": true,
+    "fields": {
+      "content": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "inline",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": ":",
+    "named": false
+  },
+  {
+    "type": "bold",
+    "named": true
+  },
+  {
+    "type": "chapter_marker",
+    "named": true
+  },
+  {
+    "type": "done_marker",
+    "named": true
+  },
+  {
+    "type": "fail_marker",
+    "named": true
+  },
+  {
+    "type": "high_marker",
+    "named": true
+  },
+  {
+    "type": "info_marker",
+    "named": true
+  },
+  {
+    "type": "italic",
+    "named": true
+  },
+  {
+    "type": "layout_end",
+    "named": true
+  },
+  {
+    "type": "math",
+    "named": true
+  },
+  {
+    "type": "opaque_text",
+    "named": true
+  },
+  {
+    "type": "raw",
+    "named": true
+  },
+  {
+    "type": "strikethrough",
+    "named": true
+  },
+  {
+    "type": "text",
+    "named": true
+  },
+  {
+    "type": "todo_marker",
+    "named": true
+  }
+]

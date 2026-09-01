@@ -1,0 +1,103 @@
+==================
+Nested visual layout
+==================
+Parent
+  child
+    grandchild
+  sibling
+After
+-----
+
+(document
+  (layout_group
+    (line
+      (text_line
+        (inline
+          (text))))
+    (layout_block
+      (layout_group
+        (line
+          (text_line
+            (inline
+              (text))))
+        (layout_block
+          (line
+            (text_line
+              (inline
+                (text)))))
+        (layout_end))
+      (line
+        (text_line
+          (inline
+            (text)))))
+    (layout_end))
+  (line
+    (text_line
+      (inline
+        (text)))))
+
+==================
+Irregular and mixed indentation
+==================
+Root
+	deep tab
+    deeper spaces
+  shallower spaces
+After
+-----
+
+(document
+  (layout_group
+    (line
+      (text_line
+        (inline
+          (text))))
+    (layout_block
+      (layout_group
+        (line
+          (text_line
+            (inline
+              (text))))
+        (layout_block
+          (line
+            (text_line
+              (inline
+                (text)))))
+        (layout_end))
+      (line
+        (text_line
+          (inline
+            (text)))))
+    (layout_end))
+  (line
+    (text_line
+      (inline
+        (text)))))
+
+==================
+Blank lines do not end a layout group
+==================
+Parent
+
+  child
+
+
+After
+-----
+
+(document
+  (layout_group
+    (line
+      (text_line
+        (inline
+          (text))))
+    (layout_block
+      (line
+        (text_line
+          (inline
+            (text)))))
+    (layout_end))
+  (line
+    (text_line
+      (inline
+        (text)))))

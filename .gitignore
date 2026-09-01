@@ -1,0 +1,4 @@
+build/
+node_modules/
+tree-sitter-tasklist.wasm
+*.log

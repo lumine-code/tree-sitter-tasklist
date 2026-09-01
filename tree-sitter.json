@@ -1,0 +1,27 @@
+{
+  "grammars": [
+    {
+      "name": "tasklist",
+      "camelcase": "Tasklist",
+      "scope": "text.tasklist",
+      "path": ".",
+      "file-types": ["tasklist", "todo"]
+    }
+  ],
+  "metadata": {
+    "version": "1.0.0",
+    "license": "MIT",
+    "description": "Parses tasklist files with Tree-sitter.",
+    "authors": [
+      {
+        "name": "lumine-code"
+      }
+    ],
+    "links": {
+      "repository": "https://github.com/lumine-code/tree-sitter-tasklist"
+    }
+  },
+  "bindings": {
+    "node": true
+  }
+}

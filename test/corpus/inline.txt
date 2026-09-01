@@ -1,0 +1,97 @@
+==================
+Five formats and empty forms
+==================
+~strike~ *bold* _italic_ $math$ `raw`
+~~ ** __ $$ ``
+-----
+
+(document
+  (line
+    (text_line
+      (inline
+        (strikethrough)
+        (text)
+        (bold)
+        (text)
+        (italic)
+        (text)
+        (math)
+        (text)
+        (raw))))
+  (line
+    (text_line
+      (inline
+        (strikethrough)
+        (text)
+        (bold)
+        (text)
+        (italic)
+        (text)
+        (math)
+        (text)
+        (raw)))))
+
+==================
+Opaque and non-nested formats
+==================
+*~inside~* ~*inside*~ *a*b*
+****
+*****
+******
+-----
+
+(document
+  (line
+    (text_line
+      (inline
+        (bold)
+        (text)
+        (strikethrough)
+        (text)
+        (bold))))
+  (line
+    (text_line
+      (inline
+        (bold))))
+  (line
+    (text_line
+      (inline
+        (bold)
+        (text))))
+  (line
+    (text_line
+      (inline
+        (bold)
+        (bold)))))
+
+==================
+Malformed formats are text
+==================
+* leading*
+*trailing *
+unclosed *text
+a*word*
+-----
+
+(document
+  (line
+    (text_line
+      (inline
+        (text)
+        (text))))
+  (line
+    (text_line
+      (inline
+        (text)
+        (text)
+        (text))))
+  (line
+    (text_line
+      (inline
+        (text)
+        (text)
+        (text))))
+  (line
+    (text_line
+      (inline
+        (text)))))

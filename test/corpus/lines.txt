@@ -1,0 +1,137 @@
+==================
+Task and note states
+==================
+▷ urgent
+☐ pending
+✔ finished
+✘ rejected
+• information
+☐
+-----
+
+(document
+  (line
+    (task
+      (high_marker)
+      (inline
+        (text))))
+  (line
+    (task
+      (todo_marker)
+      (inline
+        (text))))
+  (line
+    (task
+      (done_marker)
+      (opaque_text)))
+  (line
+    (task
+      (fail_marker)
+      (opaque_text)))
+  (line
+    (note
+      (info_marker)
+      (inline
+        (text))))
+  (line
+    (task
+      (todo_marker))))
+
+==================
+Chapters, headers, and precedence
+==================
+# Chapter:
+☐ task:
+• note:
+Header:
+  # Indented header:
+ :
+###   
+-----
+
+(document
+  (line
+    (chapter
+      (chapter_marker)
+      (inline
+        (text))))
+  (line
+    (task
+      (todo_marker)
+      (inline
+        (text))))
+  (line
+    (note
+      (info_marker)
+      (inline
+        (text))))
+  (layout_group
+    (line
+      (header
+        (inline
+          (text))))
+    (layout_block
+      (line
+        (header
+          (inline
+            (text))))
+      (line
+        (header
+          (inline
+            (text)))))
+    (layout_end))
+  (line
+    (chapter
+      (chapter_marker)
+      (inline
+        (text)))))
+
+==================
+Plain lookalikes
+==================
+#
+##
+#	Title
+  # Indented chapter
+:
+Header:	
+Header: 	
+plain text
+-----
+
+(document
+  (line
+    (text_line
+      (inline
+        (text))))
+  (line
+    (text_line
+      (inline
+        (text))))
+  (layout_group
+    (line
+      (text_line
+        (inline
+          (text))))
+    (layout_block
+      (line
+        (text_line
+          (inline
+            (text)))))
+    (layout_end))
+  (line
+    (text_line
+      (inline
+        (text))))
+  (line
+    (text_line
+      (inline
+        (text))))
+  (line
+    (text_line
+      (inline
+        (text))))
+  (line
+    (text_line
+      (inline
+        (text)))))
