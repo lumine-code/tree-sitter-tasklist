@@ -1,3 +1,5 @@
+* text=auto eol=lf
+
 *.wasm binary
 
 test/corpus/** -text whitespace=-trailing-space
