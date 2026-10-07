@@ -41,7 +41,8 @@
     "globals": "^17.12.0",
     "prettier": "^3.9.9",
     "tree-sitter": "^0.25.1",
-    "tree-sitter-cli": "0.27.0"
+    "tree-sitter-cli": "0.27.0",
+    "web-tree-sitter": "0.27.0"
   },
   "peerDependencies": {
     "tree-sitter": "^0.25.0"
@@ -60,6 +61,7 @@
     "generate": "node scripts/generate-unicode.js src/unicode.h && tree-sitter generate",
     "install": "node-gyp-build",
     "lint": "eslint .",
+    "test:wasm": "npm run build:wasm && node --test test/wasm/*.test.js",
     "test": "npm run lint && npm run check:format && npm run check:generated && npm run build:native && node --test bindings/node/binding_test.js test/*.test.js && tree-sitter test"
   }
 }

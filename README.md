@@ -28,6 +28,8 @@ parser.setLanguage(Tasklist);
 const tree = parser.parse("☐ Write the parser\n");
 ```
 
+Indentation and chapter nesting support up to 512 combined active layout groups and chapter sections. The scanner stores every active level; input beyond this explicit limit produces a parse error instead of silently losing parent state.
+
 ## Building
 
 ```sh

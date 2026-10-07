@@ -1,10 +1,13 @@
 #include "tree_sitter/parser.h"
 #include "tree_sitter/array.h"
+#include "tree_sitter/alloc.h"
 
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
+#include <assert.h>
 
 #include "unicode.h"
 
@@ -28,11 +31,21 @@ enum TokenType {
   ITALIC,
   MATH,
   RAW,
+  LAYOUT_START,
+  SECTION_START,
+  LINE_END,
+  ERROR_SENTINEL,
 };
 
+// Both stacks are nondecreasing uint16 sequences. This bound lets their
+// complete delta-coded state fit in Tree-sitter's 1024-byte serialization buffer.
+enum { MAX_NESTING_DEPTH = 512 };
+
+typedef Array(uint16_t) LevelStack;
+
 typedef struct {
-  Array(uint16_t) owners;
-  Array(uint16_t) sections;
+  LevelStack owners;
+  LevelStack sections;
   uint16_t current_indent;
   uint16_t next_indent;
   uint16_t current_chapter_level;
@@ -44,6 +57,7 @@ typedef struct {
   bool header_space_title;
   bool chapter_space_title;
   bool at_content_start;
+  uint8_t failed_formats;
 } Scanner;
 
 static bool is_ascii_space(int32_t character) {
@@ -64,10 +78,9 @@ static bool is_task_marker(int32_t character) {
 }
 
 static uint16_t advance_indent(uint16_t column, int32_t character) {
-  if (character == '\t') {
-    return (uint16_t)(column + (2 - column % 2));
-  }
-  return column == UINT16_MAX ? UINT16_MAX : (uint16_t)(column + 1);
+  uint32_t increment = character == '\t' ? 2 - column % 2 : 1;
+  uint32_t next = (uint32_t)column + increment;
+  return next > UINT16_MAX ? UINT16_MAX : (uint16_t)next;
 }
 
 static void advance_line_ending(TSLexer *lexer) {
@@ -115,8 +128,8 @@ typedef struct {
 static LineKind analyze_line(TSLexer *lexer, uint16_t indent, bool special_header_prefix) {
   LineKind kind = {false, special_header_prefix, 0};
   if (special_header_prefix) {
-    while (lexer->lookahead && !is_line_ending(lexer->lookahead)) {
-      lexer->advance(lexer, true);
+    while (!lexer->eof(lexer) && !is_line_ending(lexer->lookahead)) {
+      lexer->advance(lexer, false);
     }
     return kind;
   }
@@ -131,7 +144,7 @@ static LineKind analyze_line(TSLexer *lexer, uint16_t indent, bool special_heade
   size_t chapter_title_characters = 0;
   enum { CHAPTER_HASHES, CHAPTER_SPACES, CHAPTER_TITLE } chapter_state = CHAPTER_HASHES;
 
-  while (lexer->lookahead && !is_line_ending(lexer->lookahead)) {
+  while (!lexer->eof(lexer) && !is_line_ending(lexer->lookahead)) {
     int32_t character = lexer->lookahead;
     if (first) {
       task_marker = is_task_marker(character);
@@ -164,7 +177,7 @@ static LineKind analyze_line(TSLexer *lexer, uint16_t indent, bool special_heade
     }
 
     character_count++;
-    lexer->advance(lexer, true);
+    lexer->advance(lexer, false);
   }
 
   kind.chapter =
@@ -185,7 +198,7 @@ static void analyze_next_line(Scanner *scanner, TSLexer *lexer) {
 
   if (is_line_ending(lexer->lookahead)) {
     advance_line_ending(lexer);
-  } else if (!lexer->lookahead) {
+  } else if (lexer->eof(lexer)) {
     return;
   } else {
     return;
@@ -197,13 +210,13 @@ static void analyze_next_line(Scanner *scanner, TSLexer *lexer) {
     while (is_indent_character(lexer->lookahead)) {
       indent = advance_indent(indent, lexer->lookahead);
       prefix_count++;
-      lexer->advance(lexer, true);
+      lexer->advance(lexer, false);
     }
     if (is_line_ending(lexer->lookahead)) {
       advance_line_ending(lexer);
       continue;
     }
-    if (!lexer->lookahead) return;
+    if (lexer->eof(lexer)) return;
     scanner->next_exists = true;
     scanner->next_indent = indent;
     LineKind kind = analyze_line(
@@ -234,11 +247,13 @@ static void analyze_current_and_next(
   scanner->header_space_title = prefix.special_header_prefix;
   scanner->chapter_space_title = false;
   scanner->at_content_start = true;
+  scanner->failed_formats = 0;
   analyze_next_line(scanner, lexer);
 }
 
 static bool scan_line_start(Scanner *scanner, TSLexer *lexer) {
   Prefix prefix = consume_prefix(lexer);
+  if (lexer->eof(lexer) || is_line_ending(lexer->lookahead)) return false;
   analyze_current_and_next(scanner, lexer, prefix);
   lexer->result_symbol = LINE_START;
   return true;
@@ -259,7 +274,7 @@ static bool scan_chapter_separator(Scanner *scanner, TSLexer *lexer) {
   }
   if (count == 0) return false;
 
-  if (is_line_ending(lexer->lookahead) || !lexer->lookahead) {
+  if (is_line_ending(lexer->lookahead) || lexer->eof(lexer)) {
     if (count < 2) return false;
     scanner->chapter_space_title = true;
     // The mark left by the loop is before the last space, which becomes title.
@@ -296,7 +311,7 @@ static bool consume_transition(Scanner *scanner, TSLexer *lexer, enum TokenType 
     lexer->advance(lexer, false);
   }
 
-  if (!lexer->lookahead) {
+  if (lexer->eof(lexer)) {
     lexer->mark_end(lexer);
     lexer->result_symbol = symbol;
     return true;
@@ -310,7 +325,7 @@ static bool consume_transition(Scanner *scanner, TSLexer *lexer, enum TokenType 
       advance_line_ending(lexer);
       continue;
     }
-    if (!lexer->lookahead) {
+    if (lexer->eof(lexer)) {
       lexer->mark_end(lexer);
       lexer->result_symbol = symbol;
       return true;
@@ -326,19 +341,19 @@ static bool scan_transition(
   TSLexer *lexer,
   const bool *valid_symbols
 ) {
-  if (lexer->lookahead && !is_line_ending(lexer->lookahead)) return false;
+  if (!lexer->eof(lexer) && !is_line_ending(lexer->lookahead)) return false;
   if (valid_symbols[LAYOUT_END] && transition_closes_group(scanner)) {
     return scan_zero_width(lexer, LAYOUT_END);
   }
   if (valid_symbols[DEDENT] && transition_closes_group(scanner)) {
-    array_pop(&scanner->owners);
+    (void)array_pop(&scanner->owners);
     return scan_zero_width(lexer, DEDENT);
   }
   if (valid_symbols[SECTION_END] && transition_closes_section(scanner)) {
     return scan_zero_width(lexer, SECTION_END);
   }
   if (valid_symbols[SECTION_CLOSE] && transition_closes_section(scanner)) {
-    array_pop(&scanner->sections);
+    (void)array_pop(&scanner->sections);
     return scan_zero_width(lexer, SECTION_CLOSE);
   }
 
@@ -352,12 +367,20 @@ static bool scan_transition(
   if (
     valid_symbols[SECTION_OPEN] && transition_opens_section(scanner)
   ) {
+    if (scanner->owners.size + scanner->sections.size >= MAX_NESTING_DEPTH) return false;
+    if (scanner->sections.size && scanner->current_chapter_level < *array_back(&scanner->sections)) {
+      return false;
+    }
     array_push(&scanner->sections, scanner->current_chapter_level);
     return consume_transition(scanner, lexer, SECTION_OPEN);
   }
   if (
     valid_symbols[INDENT] && scanner->next_indent > scanner->current_indent
   ) {
+    if (scanner->owners.size + scanner->sections.size >= MAX_NESTING_DEPTH) return false;
+    if (scanner->owners.size && scanner->current_indent < *array_back(&scanner->owners)) {
+      return false;
+    }
     array_push(&scanner->owners, scanner->current_indent);
     return consume_transition(scanner, lexer, INDENT);
   }
@@ -386,10 +409,20 @@ static bool is_format_delimiter(int32_t character) {
 // Implements `DELIM(\S{,2}|\S.+?\S)DELIM` exactly: the short alternative is
 // greedy up to two characters, while the long alternative takes the earliest
 // valid closing delimiter.
-static bool scan_format(TSLexer *lexer, int32_t delimiter) {
+static bool scan_format(Scanner *scanner, TSLexer *lexer, int32_t delimiter) {
   enum TokenType symbol = format_symbol(delimiter);
+  uint8_t bit = (uint8_t)(1u << (symbol - STRIKETHROUGH));
   lexer->advance(lexer, false);
   lexer->mark_end(lexer); // Invalid opener falls back to one text character.
+
+  // A whitespace-leading opener cannot match. Any other failed scan proves
+  // there is no eligible closer of this kind later in this physical line: a
+  // later valid span would also have closed this opener. Remember that proof
+  // rather than repeatedly scanning the same suffix. The first failed token's
+  // lookahead invalidates the proof if an incremental edit adds a closer.
+  if ((scanner->failed_formats & bit) || tasklist_is_whitespace((uint32_t)lexer->lookahead)) {
+    return false;
+  }
 
   size_t content_length = 0;
   bool all_non_whitespace = true;
@@ -397,7 +430,7 @@ static bool scan_format(TSLexer *lexer, int32_t delimiter) {
   bool previous_non_whitespace = false;
   bool short_match = false;
 
-  while (lexer->lookahead && !is_line_ending(lexer->lookahead)) {
+  while (!lexer->eof(lexer) && !is_line_ending(lexer->lookahead)) {
     int32_t character = lexer->lookahead;
     if (character == delimiter) {
       lexer->advance(lexer, false);
@@ -446,6 +479,7 @@ static bool scan_format(TSLexer *lexer, int32_t delimiter) {
     lexer->result_symbol = symbol;
     return true;
   }
+  scanner->failed_formats |= bit;
   return false;
 }
 
@@ -456,7 +490,7 @@ static bool scan_final_header_colon(TSLexer *lexer, int32_t *last_character) {
     *last_character = ' ';
     lexer->advance(lexer, false);
   }
-  return is_line_ending(lexer->lookahead) || !lexer->lookahead;
+  return is_line_ending(lexer->lookahead) || lexer->eof(lexer);
 }
 
 static bool scan_text(Scanner *scanner, TSLexer *lexer) {
@@ -479,13 +513,13 @@ static bool scan_text(Scanner *scanner, TSLexer *lexer) {
   bool consumed = false;
   bool marked = false;
   int32_t previous = 0;
-  while (lexer->lookahead && !is_line_ending(lexer->lookahead)) {
+  while (!lexer->eof(lexer) && !is_line_ending(lexer->lookahead)) {
     int32_t character = lexer->lookahead;
 
     if (scanner->in_header && character == ':') {
       int32_t last_character = ':';
       if (scan_final_header_colon(lexer, &last_character)) {
-        if (!consumed) return false;
+        if (!consumed || !marked) return false;
         lexer->result_symbol = TEXT;
         return true;
       }
@@ -504,7 +538,7 @@ static bool scan_text(Scanner *scanner, TSLexer *lexer) {
         lexer->result_symbol = TEXT;
         return true;
       }
-      if (scan_format(lexer, character)) return true;
+      if (scan_format(scanner, lexer, character)) return true;
       lexer->result_symbol = TEXT;
       return true;
     }
@@ -525,7 +559,7 @@ static bool scan_text(Scanner *scanner, TSLexer *lexer) {
 
 static bool scan_opaque_text(TSLexer *lexer) {
   bool consumed = false;
-  while (lexer->lookahead && !is_line_ending(lexer->lookahead)) {
+  while (!lexer->eof(lexer) && !is_line_ending(lexer->lookahead)) {
     int32_t character = lexer->lookahead;
     lexer->advance(lexer, false);
     consumed = true;
@@ -537,7 +571,7 @@ static bool scan_opaque_text(TSLexer *lexer) {
 }
 
 void *tree_sitter_tasklist_external_scanner_create(void) {
-  Scanner *scanner = calloc(1, sizeof(Scanner));
+  Scanner *scanner = ts_calloc(1, sizeof(Scanner));
   if (!scanner) return NULL;
   array_init(&scanner->owners);
   array_init(&scanner->sections);
@@ -551,7 +585,26 @@ bool tree_sitter_tasklist_external_scanner_scan(
 ) {
   Scanner *scanner = payload;
 
+  if (!scanner || valid_symbols[ERROR_SENTINEL]) return false;
+
+  // Finish the line before lexing its transition. A transition lexed while
+  // reducing inline content has a different external lex mode and cannot be
+  // reused after a complete line is reused during an incremental parse.
+  if (valid_symbols[LINE_END] && (lexer->eof(lexer) || is_line_ending(lexer->lookahead))) {
+    return scan_zero_width(lexer, LINE_END);
+  }
   if (valid_symbols[LINE_START]) return scan_line_start(scanner, lexer);
+  // Select a container before its shared line prefix. Otherwise every line
+  // retains competing line/layout/section parses, making reusable groups fragile.
+  if (valid_symbols[SECTION_START] && transition_opens_section(scanner)) {
+    return scan_zero_width(lexer, SECTION_START);
+  }
+  if (
+    valid_symbols[LAYOUT_START] && scanner->next_exists &&
+    scanner->next_indent > scanner->current_indent && !transition_opens_section(scanner)
+  ) {
+    return scan_zero_width(lexer, LAYOUT_START);
+  }
   if (valid_symbols[CHAPTER_START] && scanner->chapter_valid) {
     scanner->at_content_start = false;
     return scan_zero_width(lexer, CHAPTER_START);
@@ -608,6 +661,93 @@ static uint16_t read_u16(const char *buffer, size_t *offset) {
   return value;
 }
 
+static void write_bit(char *buffer, size_t *position, bool value) {
+  size_t byte = *position / 8;
+  unsigned bit = (unsigned)(*position % 8);
+  if (bit == 0) buffer[byte] = 0;
+  if (value) buffer[byte] = (char)((uint8_t)buffer[byte] | (uint8_t)(1u << bit));
+  (*position)++;
+}
+
+static bool read_bit(const char *buffer, size_t length, size_t *position, bool *value) {
+  if (*position >= length * 8) return false;
+  *value = ((uint8_t)buffer[*position / 8] & (1u << (*position % 8))) != 0;
+  (*position)++;
+  return true;
+}
+
+// Rice-code the nonnegative deltas of a nondecreasing stack. Choose the
+// remainder width from the average delta, bounding total unary bits by the
+// number of entries. Even a split 512-entry nesting stack fits comfortably in
+// the serialization buffer; no parent or section is ever silently discarded.
+static void write_stack(char *buffer, size_t *size, const LevelStack *stack) {
+  write_u16(buffer, size, (uint16_t)stack->size);
+  uint32_t span = stack->size ? (uint32_t)*array_back(stack) + 1 : 0;
+  unsigned width = 0;
+  while (stack->size && ((uint32_t)stack->size << width) < span) width++;
+  buffer[(*size)++] = (char)width;
+  size_t position = *size * 8;
+  uint32_t previous = 0;
+  for (uint32_t index = 0; index < stack->size; index++) {
+    uint32_t current = (uint32_t)*array_get(stack, index) + 1;
+    assert(current >= previous);
+    uint32_t delta = current - previous;
+    for (uint32_t quotient = delta >> width; quotient > 0; quotient--) {
+      write_bit(buffer, &position, true);
+    }
+    write_bit(buffer, &position, false);
+    for (unsigned bit = 0; bit < width; bit++) {
+      write_bit(buffer, &position, (delta & (1u << bit)) != 0);
+    }
+    previous = current;
+  }
+  *size = (position + 7) / 8;
+}
+
+static bool read_stack(
+  const char *buffer,
+  size_t length,
+  size_t *offset,
+  LevelStack *stack,
+  uint32_t remaining_depth
+) {
+  if (*offset + 3 > length) return false;
+  uint16_t count = read_u16(buffer, offset);
+  unsigned width = (uint8_t)buffer[(*offset)++];
+  if (count > remaining_depth || width > 16) return false;
+  size_t position = *offset * 8;
+  uint32_t previous = 0;
+  for (uint16_t index = 0; index < count; index++) {
+    uint32_t quotient = 0;
+    bool bit;
+    do {
+      if (!read_bit(buffer, length, &position, &bit)) return false;
+      if (bit && ++quotient > (((uint32_t)UINT16_MAX + 1) >> width)) return false;
+    } while (bit);
+    uint32_t delta = quotient << width;
+    for (unsigned shift = 0; shift < width; shift++) {
+      if (!read_bit(buffer, length, &position, &bit)) return false;
+      if (bit) delta |= 1u << shift;
+    }
+    uint32_t current = previous + delta;
+    if (current == 0 || current > (uint32_t)UINT16_MAX + 1) return false;
+    array_push(stack, (uint16_t)(current - 1));
+    previous = current;
+  }
+  *offset = (position + 7) / 8;
+  return true;
+}
+
+static void reset_scanner(Scanner *scanner) {
+  array_clear(&scanner->owners);
+  array_clear(&scanner->sections);
+  LevelStack owners = scanner->owners;
+  LevelStack sections = scanner->sections;
+  memset(scanner, 0, sizeof(*scanner));
+  scanner->owners = owners;
+  scanner->sections = sections;
+}
+
 unsigned tree_sitter_tasklist_external_scanner_serialize(
   void *payload,
   char *buffer
@@ -627,24 +767,9 @@ unsigned tree_sitter_tasklist_external_scanner_serialize(
   write_u16(buffer, &size, scanner->next_indent);
   write_u16(buffer, &size, scanner->current_chapter_level);
   write_u16(buffer, &size, scanner->next_chapter_level);
-
-  size_t available_pairs = (TREE_SITTER_SERIALIZATION_BUFFER_SIZE - 13) / 2;
-  uint16_t owner_count = scanner->owners.size < available_pairs
-    ? (uint16_t)scanner->owners.size
-    : (uint16_t)available_pairs;
-  available_pairs -= owner_count;
-  uint16_t section_count = scanner->sections.size < available_pairs
-    ? (uint16_t)scanner->sections.size
-    : (uint16_t)available_pairs;
-  write_u16(buffer, &size, owner_count);
-  write_u16(buffer, &size, section_count);
-
-  for (uint16_t index = 0; index < owner_count; index++) {
-    write_u16(buffer, &size, *array_get(&scanner->owners, index));
-  }
-  for (uint16_t index = 0; index < section_count; index++) {
-    write_u16(buffer, &size, *array_get(&scanner->sections, index));
-  }
+  buffer[size++] = (char)scanner->failed_formats;
+  write_stack(buffer, &size, &scanner->owners);
+  write_stack(buffer, &size, &scanner->sections);
   return (unsigned)size;
 }
 
@@ -654,20 +779,8 @@ void tree_sitter_tasklist_external_scanner_deserialize(
   unsigned length
 ) {
   Scanner *scanner = payload;
-  array_clear(&scanner->owners);
-  array_clear(&scanner->sections);
-  scanner->current_indent = 0;
-  scanner->next_indent = 0;
-  scanner->current_chapter_level = 0;
-  scanner->next_chapter_level = 0;
-  scanner->next_exists = false;
-  scanner->chapter_valid = false;
-  scanner->header_valid = false;
-  scanner->in_header = false;
-  scanner->header_space_title = false;
-  scanner->chapter_space_title = false;
-  scanner->at_content_start = false;
-  if (length < 13) return;
+  reset_scanner(scanner);
+  if (length < 16) return;
 
   uint8_t flags = (uint8_t)buffer[0];
   scanner->next_exists = (flags & 1u) != 0;
@@ -682,20 +795,25 @@ void tree_sitter_tasklist_external_scanner_deserialize(
   scanner->next_indent = read_u16(buffer, &offset);
   scanner->current_chapter_level = read_u16(buffer, &offset);
   scanner->next_chapter_level = read_u16(buffer, &offset);
-  uint16_t owner_count = read_u16(buffer, &offset);
-  uint16_t section_count = read_u16(buffer, &offset);
-  if (offset + (size_t)(owner_count + section_count) * 2 > length) return;
-  for (uint16_t index = 0; index < owner_count; index++) {
-    array_push(&scanner->owners, read_u16(buffer, &offset));
-  }
-  for (uint16_t index = 0; index < section_count; index++) {
-    array_push(&scanner->sections, read_u16(buffer, &offset));
+  scanner->failed_formats = (uint8_t)buffer[offset++];
+  if (
+    !read_stack(buffer, length, &offset, &scanner->owners, MAX_NESTING_DEPTH) ||
+    !read_stack(
+      buffer,
+      length,
+      &offset,
+      &scanner->sections,
+      MAX_NESTING_DEPTH - scanner->owners.size
+    ) || offset != length
+  ) {
+    reset_scanner(scanner);
   }
 }
 
 void tree_sitter_tasklist_external_scanner_destroy(void *payload) {
   Scanner *scanner = payload;
+  if (!scanner) return;
   array_delete(&scanner->owners);
   array_delete(&scanner->sections);
-  free(scanner);
+  ts_free(scanner);
 }

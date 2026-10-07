@@ -23,20 +23,39 @@ module.exports = grammar({
     $.italic,
     $.math,
     $.raw,
+    $._layout_start,
+    $._section_start,
+    $._line_end,
+    $._error_sentinel,
   ],
 
   rules: {
     document: ($) =>
       seq(
         repeat($._blank_line),
-        optional(seq($._line_start, $._item, repeat(seq($._same, $._item)), $._end)),
+        optional(seq($._line_start, $._items, $._end)),
         optional($._trailing_space),
       ),
 
     _item: ($) => choice($.chapter_section, $.layout_group, $.line),
 
+    // Bounded groups retain whole unchanged runs during an incremental edit.
+    // The groups are hidden, so every consumer still sees the actual items.
+    _items: ($) => seq($._item, repeat($._items_64)),
+
+    _items_64: ($) =>
+      prec.right(seq($._items_8, ...Array.from({ length: 7 }, () => optional($._items_8)))),
+
+    _items_8: ($) =>
+      prec.right(
+        seq($._following_item, ...Array.from({ length: 7 }, () => optional($._following_item))),
+      ),
+
+    _following_item: ($) => seq($._same, $._item),
+
     chapter_section: ($) =>
       seq(
+        $._section_start,
         field("heading", $.line),
         $._section_open,
         field("body", $.section_body),
@@ -44,10 +63,11 @@ module.exports = grammar({
         $._section_close,
       ),
 
-    section_body: ($) => seq($._item, repeat(seq($._same, $._item))),
+    section_body: ($) => $._items,
 
     layout_group: ($) =>
       seq(
+        $._layout_start,
         field("owner", $.line),
         $._indent,
         field("body", $.layout_block),
@@ -55,12 +75,13 @@ module.exports = grammar({
         $._dedent,
       ),
 
-    layout_block: ($) => seq($._item, repeat(seq($._same, $._item))),
+    layout_block: ($) => $._items,
 
     line: ($) =>
       seq(
         choice($.chapter, $.task, $.note, $.header, $.text_line),
         optional($._ascii_trailing_space),
+        $._line_end,
       ),
 
     chapter: ($) =>
@@ -111,7 +132,19 @@ module.exports = grammar({
 
     text_line: ($) => field("content", $.inline),
 
-    inline: ($) => repeat1(choice($.text, $.strikethrough, $.bold, $.italic, $.math, $.raw)),
+    inline: ($) => seq($._inline_token, repeat($._inline_tokens_64)),
+
+    _inline_tokens_64: ($) =>
+      prec.right(
+        seq($._inline_tokens_8, ...Array.from({ length: 7 }, () => optional($._inline_tokens_8))),
+      ),
+
+    _inline_tokens_8: ($) =>
+      prec.right(
+        seq($._inline_token, ...Array.from({ length: 7 }, () => optional($._inline_token))),
+      ),
+
+    _inline_token: ($) => choice($.text, $.strikethrough, $.bold, $.italic, $.math, $.raw),
 
     chapter_marker: () => /#+/,
     high_marker: () => "▷",
@@ -122,7 +155,7 @@ module.exports = grammar({
 
     _spaces: () => / +/,
     _ascii_trailing_space: () => / +/,
-    _blank_line: () => /[ \t]*\r?\n/,
+    _blank_line: () => /[ \t]*(?:\r\n|\n|\r)/,
     _trailing_space: () => /[ \t]+/,
   },
 });
