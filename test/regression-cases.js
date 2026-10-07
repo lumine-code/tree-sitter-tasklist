@@ -74,6 +74,43 @@ module.exports = (test, createParser) => {
     }
   });
 
+  test("keeps nonfinal colons in header titles and preserves layout during edits", () => {
+    const parser = createParser();
+    try {
+      for (const [source, title] of [
+        ["a::", "a:"],
+        ["a: :", "a:"],
+        ["Heading: : ", "Heading:"],
+        ["Time: 12:00:", "Time: 12:00"],
+        ["::", ":"],
+        ["*bold*: :", "*bold*:"],
+        ["Zażółć: 🐱: :", "Zażółć: 🐱:"],
+        ["a:\0:", "a:\0"],
+      ]) {
+        const tree = parser.parse(source + "\r\n  ☐ child\r\n");
+        assert.equal(tree.rootNode.hasError, false, source);
+        const header = tree.rootNode.descendantsOfType("header")[0];
+        assert.equal(header.childForFieldName("title").text, title);
+        assert.equal(header.childForFieldName("colon").text, ":");
+        assert.equal(header.childForFieldName("colon").startIndex, source.lastIndexOf(":"));
+        assert.equal(tree.rootNode.descendantsOfType("layout_group").length, 1);
+        tree.delete?.();
+      }
+      for (const [source, index, removed, inserted] of [
+        ["a:\n  ☐ child\n", 1, 0, ":"],
+        ["a:x:\n  ☐ child\n", 2, 1, ""],
+        ["a::\n  ☐ child\n", 2, 1, ""],
+        ["*bold*:text:\n  ☐ child\n", 7, 4, ""],
+      ]) {
+        const tree = edit(parser, source, index, removed, inserted);
+        assert.equal(tree.rootNode.descendantsOfType("layout_group").length, 1);
+        tree.delete?.();
+      }
+    } finally {
+      parser.delete?.();
+    }
+  });
+
   test("scans unmatched formats linearly and keeps other delimiter types visible", () => {
     const parser = createParser();
     try {

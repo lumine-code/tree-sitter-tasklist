@@ -485,6 +485,9 @@ static bool scan_format(Scanner *scanner, TSLexer *lexer, int32_t delimiter) {
 
 static bool scan_final_header_colon(TSLexer *lexer, int32_t *last_character) {
   lexer->advance(lexer, false);
+  // A nonfinal colon belongs to the title. If it proves final, the caller
+  // returns false and the internal lexer handles the delimiter instead.
+  lexer->mark_end(lexer);
   *last_character = ':';
   while (is_ascii_space(lexer->lookahead)) {
     *last_character = ' ';
@@ -517,13 +520,18 @@ static bool scan_text(Scanner *scanner, TSLexer *lexer) {
     int32_t character = lexer->lookahead;
 
     if (scanner->in_header && character == ':') {
-      int32_t last_character = ':';
-      if (scan_final_header_colon(lexer, &last_character)) {
-        if (!consumed || !marked) return false;
+      // Finish preceding text before probing a colon. The probe's mark must
+      // not replace the last non-space title end when this is the delimiter.
+      if (consumed && marked) {
         lexer->result_symbol = TEXT;
         return true;
       }
+      int32_t last_character = ':';
+      if (scan_final_header_colon(lexer, &last_character)) {
+        return false;
+      }
       consumed = true;
+      marked = true;
       previous = last_character;
       continue;
     }
